@@ -30,18 +30,16 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     global mustClose
     global numberOfClients
     uniqueId = generateUniqueId()
-    numberOfClients += 1
-
-    clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
-
     clients[uniqueId] = {'ip': clientAddress[0],
-                         'port': clientAddress[1], 'state': 'connected'}
+                         'port': clientAddress[1], 'state': 'waiting-ID'}
+    
+    numberOfClients += 1
+    clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
 
     print(
         f"New connection from {clientAddress}. Assigned ID: {uniqueId}. Number of clients is {numberOfClients}")
-
+    clients[uniqueId]['state'] = 'idle'
     while True:
-        print(f'handling {uniqueId}')
         if mustClose == True:
             clientSocket.close()
             break
