@@ -43,8 +43,41 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
         if mustClose == True:
             clientSocket.close()
             break
+        # server recieve the requestdID from client
+        if clients[uniqueId]['state'] == 'idle':
+            # server receives the requested ID from the client
+            try:
+              requestedId = clientSocket.recv(1024).decode()
+            except:
+                break
+            # Check if requestedId is a valid integer
+            try:
+                requestedId = int(requestedId)
+            except ValueError:
+                print(f"Invalid ID received from {clientAddress}. Closing connection.")
+                break
 
-        time.sleep(1)
+            # Check if the requested ID exists in clients and the client is idle
+            if requestedId in clients and clients[requestedId]['state'] == 'idle':
+                # Ask the client if they want to establish a connection
+                clientSocket.send(uniqueId.encode('utf-8'))
+                response = clientSocket.recv(1024).decode().lower()
+
+                if response == "yes":
+                    # Establish connection
+                    clients[uniqueId]['state'] = 'connected'
+                    clients[requestedId]['state'] = 'connected'
+                    print(f"Connection established between {uniqueId} and {requestedId}")
+
+                else:
+                    print(f"Connection request denied by {uniqueId}")
+                    break
+            else:
+                # ID not found or client is not idle
+                print("sa2")
+                clientSocket.send("-1".encode('utf-8'))
+
+        time.sleep(0.1)
 
 
 mustClose = False
