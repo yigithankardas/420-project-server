@@ -31,7 +31,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     global numberOfClients
     uniqueId = generateUniqueId()
     clients[uniqueId] = {'ip': clientAddress[0],
-                         'port': clientAddress[1], 'state': 'waiting-ID'}
+                         'port': clientAddress[1], 
+                         'state': 'waiting-ID',
+                         'socket': clientSocket,
+                         }
     
     numberOfClients += 1
     clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
@@ -44,12 +47,15 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             clientSocket.close()
             break
         # server recieve the requestdID from client
+        
         if clients[uniqueId]['state'] == 'idle':
             # server receives the requested ID from the client
-            try:
-              requestedId = clientSocket.recv(1024).decode()
-            except:
+            while True:
+              try:
+                requestedId = clientSocket.recv(1024).decode()
                 break
+              except:
+                  continue
             # Check if requestedId is a valid integer
             try:
                 requestedId = int(requestedId)
@@ -60,9 +66,14 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             # Check if the requested ID exists in clients and the client is idle
             if requestedId in clients and clients[requestedId]['state'] == 'idle':
                 # Ask the client if they want to establish a connection
-                clientSocket.send(uniqueId.encode('utf-8'))
-                response = clientSocket.recv(1024).decode().lower()
-
+                print(clients[requestedId]['socket'])
+                clients[requestedId]['socket'].send(str(uniqueId).encode('utf-8'))
+                while True:
+                  try:
+                    response = clients[requestedId]['socket'].recv(1024).decode().lower()
+                    break
+                  except:
+                    continue
                 if response == "yes":
                     # Establish connection
                     clients[uniqueId]['state'] = 'connected'
@@ -71,10 +82,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
                 else:
                     print(f"Connection request denied by {uniqueId}")
+                    clientSocket.send("0".encode('utf-8'))
                     break
             else:
                 # ID not found or client is not idle
-                print("sa2")
                 clientSocket.send("-1".encode('utf-8'))
 
         time.sleep(0.1)
