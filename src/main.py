@@ -1,3 +1,6 @@
+if __name__ != "__main__":
+    exit(1)
+
 import socket
 import random
 import threading
@@ -24,6 +27,7 @@ def generateUniqueId() -> int:
 
 
 def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
+    global mustClose
     global numberOfClients
     uniqueId = generateUniqueId()
     numberOfClients += 1
@@ -38,23 +42,47 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
     while True:
         print(f'handling {uniqueId}')
+        if mustClose == True:
+            clientSocket.close()
+            break
+
         time.sleep(1)
 
 
-if __name__ == "__main__":
-    def signalHandler(signal, frame):
-        serverSocket.close()
-        sys.exit(1)
+mustClose = False
 
-    signal.signal(signal.SIGINT, signalHandler)
-    serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def socketHandler(serverSocket):
+    global mustClose
+    clientThreads = []
+    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serverSocket.bind((HOST, PORT))
     serverSocket.listen()
-
     print(f"Server listening on {HOST}:{PORT}")
-
     while True:
-        clientSocket, clientAddr = serverSocket.accept()
-        clientThread = threading.Thread(
-            target=handleClient, args=(clientSocket, clientAddr))
-        clientThread.start()
+        try:
+            clientSocket, clientAddr = serverSocket.accept()
+            clientThread = threading.Thread(
+                target=handleClient, args=(clientSocket, clientAddr))
+            clientThread.daemon = True
+            clientThreads.append(clientThread)
+            clientThread.start()
+        except:
+            if mustClose == True:
+                for thread in clientThreads:
+                    thread.join()
+                break
+
+socket.setdefaulttimeout(2)
+serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+socketThread = threading.Thread(target=socketHandler, args=(serverSocket,))
+socketThread.start()
+
+def signalHandler(sig, frame):
+    global mustClose
+    mustClose = True
+    print(f'[MAIN]: SIGINT received! All threads will terminate in short period of time. mustClose: {mustClose}')
+    exit(1)
+
+signal.signal(signal.SIGINT, signalHandler)
+while True:
+    time.sleep(0.1)
