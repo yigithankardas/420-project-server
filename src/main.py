@@ -50,24 +50,21 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                          'port': clientAddress[1],
                          'state': 'waiting-id',
                          'socket': clientSocket,
+                         'canRead': atomics.atomic(width=1, atype=atomics.UINT)
                          }
 
+    clients[uniqueId]['canRead'].store(1)
     numberOfClients += 1
     lock.release()
 
-    for i in range(2):
-        try:
-            clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
-            break
-        except:
-            if i == 1:
-                lock.acquire()
-                del clients[uniqueId]
-                numberOfClients -= 1
-                lock.release()
-                clientSocket.close()
-            else:
-                continue
+    try:
+        clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
+    except:
+        lock.acquire()
+        del clients[uniqueId]
+        numberOfClients -= 1
+        lock.release()
+        clientSocket.close()
 
     print(
         f'New connection: {clientAddress}. ID: {uniqueId}. Number of clients: {numberOfClients}')
@@ -78,50 +75,42 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     while True:
         sleep(0.01)
 
+        if clients[uniqueId]['canRead'].load() == 0:
+            continue
+
         if mustQuit.load() == 1:
             try:
                 clientSocket.send('quit'.encode(encoding='utf-8'))
             except:
                 clientSocket.close()
+            finally:
+                clientSocket.close()
+            break
+
+        try:
+            message = clientSocket.recv(1024).decode()
+        except:
+            continue
+
+        if message == 'quit':
+            lock.acquire()
+            del clients[uniqueId]
+            numberOfClients -= 1
+            lock.release()
             clientSocket.close()
+            print(f'[T-{uniqueId}]: Connection has been terminated.')
             break
 
         if clientObject['state'] == 'idle':
             # server receives the requested ID from the client
-            mustBreak = False
-            while True:
-                if mustQuit.load() == 1:
-                    try:
-                        clientSocket.send('quit'.encode(encoding='utf-8'))
-                    except:
-                        pass
-
-                    clientSocket.close()
-                    mustBreak = True
-                    break
-
-                try:
-                    requestedId = clientSocket.recv(1024).decode()
-                    break
-
-                except:
-                    continue
-
-            if mustBreak == True:
-                lock.acquire()
-                del clients[uniqueId]
-                numberOfClients -= 1
-                lock.release()
-                clientSocket.close()
-                break
-
             # Check if requestedId is a valid integer
             try:
-                requestedId = int(requestedId)
+                requestedId = int(message)
             except ValueError:
-                print(f'Invalid ID received from ID: {uniqueId}.')
+                print(f'[T-{uniqueId}]: Invalid ID received.')
                 try:
-                    clientSocket.send('-1'.encode(encoding='utf-8'))
+                    clientSocket.send('-2'.encode(encoding='utf-8'))
+                    continue
                 except:
                     lock.acquire()
                     del clients[uniqueId]
@@ -135,15 +124,20 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                 # Ask the client if they want to establish a connection
                 try:
                     clients[requestedId]['socket'].send(
-                        str(uniqueId).encode('utf-8'))
+                        str(f'S-{uniqueId}').encode('utf-8'))
                 except:
-                    lock.acquire()
-                    del clients[uniqueId]
-                    numberOfClients -= 1
-                    lock.release()
-                    clientSocket.close()
-                    break
+                    try:
+                        clientSocket.send('-1'.encode('utf-8'))
+                        continue
+                    except:
+                        lock.acquire()
+                        del clients[uniqueId]
+                        numberOfClients -= 1
+                        lock.release()
+                        clientSocket.close()
+                        break
 
+                clients[requestedId]['canRead'].store(0)
                 while True:
                     try:
                         response = clients[requestedId]['socket'].recv(
@@ -156,13 +150,15 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     # Establish connection
                     clientObject['state'] = 'connected'
                     clients[requestedId]['state'] = 'connected'
+                    clients[requestedId]['canRead'].store(1)
                     print(
-                        f'Connection established between {uniqueId} and {requestedId}')
+                        f'[T-{uniqueId}]: Connection established between {uniqueId} and {requestedId}')
 
-                else:
-                    print(f'Connection request denied by {uniqueId}')
+                elif response == 'no':
+                    print(f'[T-{uniqueId}]: Connection request denied')
+                    clients[requestedId]['canRead'].store(1)
                     try:
-                        clientSocket.send('0'.encode('utf-8'))
+                        clientSocket.send('-1'.encode('utf-8'))
                     except:
                         lock.acquire()
                         del clients[uniqueId]
@@ -171,7 +167,6 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                         clientSocket.close()
                         break
 
-                    break
             else:
                 try:
                     clientSocket.send('-1'.encode('utf-8'))
@@ -191,7 +186,7 @@ def socketHandler(serverSocket):
     serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serverSocket.bind((HOST, PORT))
     serverSocket.listen()
-    print(f'Server listening on {HOST}:{PORT}')
+    print(f'[SERVER]: Listening on {HOST}:{PORT}')
 
     while True:
         try:
@@ -223,5 +218,4 @@ def signalHandler(sig, frame):
 
 
 signal.signal(signal.SIGINT, signalHandler)
-while True:
-    sleep(0.1)
+socketThread.join()
