@@ -218,4 +218,7 @@ def signalHandler(sig, frame):
 
 
 signal.signal(signal.SIGINT, signalHandler)
+while mustQuit.load() != 1:
+    sleep(0.01)
+
 socketThread.join()
