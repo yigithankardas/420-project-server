@@ -159,6 +159,14 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     clients[requestedId]['canRead'].store(1)
                     try:
                         clientSocket.send('-1'.encode('utf-8'))
+                        
+                        newUniqueID = generateUniqueId()
+                        newRequestedID = generateUniqueId()
+                        clients[newUniqueID] = clients.pop(uniqueId)
+                        clients[newRequestedID] = clients.pop(requestedId)
+                        clientSocket.send(f'newID-{newUniqueID}'.encode('utf-8'))
+                        clients[requestedId]['socket'].send(f'newID-{newRequestedID}'.encode('utf-8'))
+
                     except:
                         lock.acquire()
                         del clients[uniqueId]
@@ -170,6 +178,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             else:
                 try:
                     clientSocket.send('-1'.encode('utf-8'))
+                    newUniqueID = generateUniqueId()
+                    clients[newUniqueID] = clients.pop(uniqueId)
+                    clientSocket.send(f'newID-{newUniqueID}'.encode('utf-8'))
+
                 except:
                     lock.acquire()
                     del clients[uniqueId]
