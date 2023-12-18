@@ -45,20 +45,23 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     global numberOfClients
 
     lock.acquire()
-    uniqueId = generateUniqueId()
-    clients[uniqueId] = {'ip': clientAddress[0],
-                         'port': clientAddress[1],
-                         'state': 'waiting-id',
-                         'socket': clientSocket,
-                         'canRead': atomics.atomic(width=1, atype=atomics.UINT)
-                         }
+    clientEntry = {'ip': clientAddress[0],
+                   'port': clientAddress[1],
+                   'id': generateUniqueId(),
+                   'state': 'waiting-id',
+                   'socket': clientSocket,
+                   'canRead': atomics.atomic(width=1, atype=atomics.UINT)
+                   }
 
-    clients[uniqueId]['canRead'].store(1)
+    clients[clientEntry['id']] = clientEntry
+    clients[clientEntry['id']]['canRead'].store(1)
     numberOfClients += 1
     lock.release()
 
+    uniqueId = clientEntry['id']
     try:
-        clientSocket.send(str(uniqueId).encode(encoding='utf-8'))
+        clientSocket.send(
+            (str(uniqueId)+'\0').encode(encoding='utf-8'))
     except:
         lock.acquire()
         del clients[uniqueId]
@@ -69,18 +72,18 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     print(
         f'New connection: {clientAddress}. ID: {uniqueId}. Number of clients: {numberOfClients}')
 
-    clientObject = clients[uniqueId]
-    clientObject['state'] = 'idle'
+    clientEntry['state'] = 'idle'
 
     while True:
         sleep(0.01)
 
-        if clients[uniqueId]['canRead'].load() == 0:
+        uniqueId = clientEntry['id']
+        if clientEntry['canRead'].load() == 0:
             continue
 
         if mustQuit.load() == 1:
             try:
-                clientSocket.send('quit'.encode(encoding='utf-8'))
+                clientSocket.send('quit\0'.encode(encoding='utf-8'))
             except:
                 clientSocket.close()
             finally:
@@ -94,14 +97,14 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
         if message == 'quit':
             lock.acquire()
-            del clients[uniqueId]
+            del clientEntry
             numberOfClients -= 1
             lock.release()
             clientSocket.close()
             print(f'[T-{uniqueId}]: Connection has been terminated.')
             break
 
-        if clientObject['state'] == 'idle':
+        if clientEntry['state'] == 'idle':
             # server receives the requested ID from the client
             # Check if requestedId is a valid integer
             try:
@@ -109,11 +112,11 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             except ValueError:
                 print(f'[T-{uniqueId}]: Invalid ID received.')
                 try:
-                    clientSocket.send('-2'.encode(encoding='utf-8'))
+                    clientSocket.send('-2\0'.encode(encoding='utf-8'))
                     continue
                 except:
                     lock.acquire()
-                    del clients[uniqueId]
+                    del clientEntry
                     numberOfClients -= 1
                     lock.release()
                     clientSocket.close()
@@ -124,14 +127,14 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                 # Ask the client if they want to establish a connection
                 try:
                     clients[requestedId]['socket'].send(
-                        str(f'S-{uniqueId}').encode('utf-8'))
+                        f'S-{uniqueId}\0'.encode('utf-8'))
                 except:
                     try:
-                        clientSocket.send('-1'.encode('utf-8'))
+                        clientSocket.send('-1\0'.encode('utf-8'))
                         continue
                     except:
                         lock.acquire()
-                        del clients[uniqueId]
+                        del clientEntry
                         numberOfClients -= 1
                         lock.release()
                         clientSocket.close()
@@ -148,7 +151,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
                 if response == 'yes':
                     # Establish connection
-                    clientObject['state'] = 'connected'
+                    clientEntry['state'] = 'connected'
                     clients[requestedId]['state'] = 'connected'
                     clients[requestedId]['canRead'].store(1)
                     print(
@@ -156,16 +159,19 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
                 elif response == 'no':
                     print(f'[T-{uniqueId}]: Connection request denied')
-                    clients[requestedId]['canRead'].store(1)
+                    newUniqueID = generateUniqueId()
+                    newRequestedID = generateUniqueId()
+                    clients[newUniqueID] = clients.pop(uniqueId)
+                    clients[newRequestedID] = clients.pop(requestedId)
+                    clients[newUniqueID]['id'] = newUniqueID
+                    clients[newRequestedID]['id'] = newRequestedID
+                    clients[newRequestedID]['canRead'].store(1)
                     try:
-                        clientSocket.send('-1'.encode('utf-8'))
-                        
-                        newUniqueID = generateUniqueId()
-                        newRequestedID = generateUniqueId()
-                        clients[newUniqueID] = clients.pop(uniqueId)
-                        clients[newRequestedID] = clients.pop(requestedId)
-                        clientSocket.send(f'newID-{newUniqueID}'.encode('utf-8'))
-                        clients[requestedId]['socket'].send(f'newID-{newRequestedID}'.encode('utf-8'))
+                        clientSocket.send('-1\0'.encode('utf-8'))
+                        clientSocket.send(
+                            f'newID-{newUniqueID}\0'.encode('utf-8'))
+                        clients[newRequestedID]['socket'].send(
+                            f'newID-{newRequestedID}\0'.encode('utf-8'))
 
                     except:
                         lock.acquire()
@@ -177,11 +183,11 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
             else:
                 try:
-                    clientSocket.send('-1'.encode('utf-8'))
+                    clientSocket.send('-1\0'.encode('utf-8'))
                     newUniqueID = generateUniqueId()
                     clients[newUniqueID] = clients.pop(uniqueId)
-                    clientSocket.send(f'newID-{newUniqueID}'.encode('utf-8'))
-
+                    clients[newUniqueID]['id'] = newUniqueID
+                    clientSocket.send(f'newID-{newUniqueID}\0'.encode('utf-8'))
                 except:
                     lock.acquire()
                     del clients[uniqueId]
