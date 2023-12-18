@@ -7,6 +7,8 @@ from threading import Thread, Lock
 from time import sleep
 import signal
 import atomics
+import random
+from cryptography.hazmat.primitives.asymmetric import dh
 
 
 HOST = '127.0.0.1'
@@ -15,6 +17,11 @@ PORT = 5555
 clients = {}
 lock = Lock()
 numberOfClients = 0
+
+# Diffie Hellman Parameters
+parameters = dh.generate_parameters(generator=2, key_size=512)
+p = parameters.parameter_numbers().p
+g = parameters.parameter_numbers().g
 
 mustQuit = atomics.atomic(width=1, atype=atomics.UINT)
 mustQuit.store(0)
@@ -62,6 +69,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     try:
         clientSocket.send(
             (str(uniqueId)+'\0').encode(encoding='utf-8'))
+        clientSocket.send(f"G-{g}\0P-{p}\0".encode(encoding='utf-8'))
     except:
         lock.acquire()
         del clients[uniqueId]
@@ -154,6 +162,43 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     clientEntry['state'] = 'connected'
                     clients[requestedId]['state'] = 'connected'
                     clients[requestedId]['canRead'].store(1)
+                    try:
+                        clientEntry['state'] = 'key-exchange'
+                        clients[requestedId]['state'] = 'key-exchange'
+                        gA = clientSocket.recv(1024).decode() 
+                        gB = clients[requestedId]['socket'].recv(1024).decode() 
+
+                        clientSocket.send(f'B-{gB}\0'.encode('utf-8'))
+                        clients[requestedId]['socket'].send(f'B-{gA}\0'.encode('utf-8')) 
+
+                        clientEntry['state'] = 'in-session'
+                        clients[requestedId]['state'] = 'in-session'
+
+                    except:
+                        clientEntry['state'] = 'idle'
+                        clients[requestedId]['state'] = 'idle'
+                        newUniqueID = generateUniqueId()
+                        newRequestedID = generateUniqueId()
+                        clients[newUniqueID] = clients.pop(uniqueId)
+                        clients[newRequestedID] = clients.pop(requestedId)
+                        clients[newUniqueID]['id'] = newUniqueID
+                        clients[newRequestedID]['id'] = newRequestedID
+                        clients[newRequestedID]['canRead'].store(1)
+                        try:
+                            clientSocket.send('-1\0'.encode('utf-8'))
+                            clientSocket.send(
+                                f'newID-{newUniqueID}\0'.encode('utf-8'))
+                            clients[newRequestedID]['socket'].send(
+                                f'newID-{newRequestedID}\0'.encode('utf-8'))
+                        except:
+                            lock.acquire()
+                            del clients[uniqueId]
+                            numberOfClients -= 1
+                            lock.release()
+                            clientSocket.close()
+                            break
+
+                        continue
                     print(
                         f'[T-{uniqueId}]: Connection established between {uniqueId} and {requestedId}')
 
