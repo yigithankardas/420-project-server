@@ -161,18 +161,23 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     # Establish connection
                     clientEntry['state'] = 'connected'
                     clients[requestedId]['state'] = 'connected'
-                    clients[requestedId]['canRead'].store(1)
+
+                    clientEntry['state'] = 'key-exchange'
+                    clients[requestedId]['state'] = 'key-exchange'
                     try:
-                        clientEntry['state'] = 'key-exchange'
-                        clients[requestedId]['state'] = 'key-exchange'
-                        gA = clientSocket.recv(1024).decode() 
-                        gB = clients[requestedId]['socket'].recv(1024).decode() 
+                        clientSocket.send('1\0'.encode('utf-8'))
+                        clients[requestedId]['socket'].send(
+                            '1\0'.encode('utf-8'))
+                        gA = clientSocket.recv(1024).decode()
+                        gB = clients[requestedId]['socket'].recv(1024).decode()
 
                         clientSocket.send(f'B-{gB}\0'.encode('utf-8'))
-                        clients[requestedId]['socket'].send(f'B-{gA}\0'.encode('utf-8')) 
+                        clients[requestedId]['socket'].send(
+                            f'B-{gA}\0'.encode('utf-8'))
 
                         clientEntry['state'] = 'in-session'
                         clients[requestedId]['state'] = 'in-session'
+                        clients[requestedId]['canRead'].store(1)
 
                     except:
                         clientEntry['state'] = 'idle'
