@@ -122,7 +122,6 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             
             try:
                 requestedId = int(message)
-                clients[requestedId]['canRead'].store(0)
             except ValueError:
                 print(f'[T-{uniqueId}]: Invalid ID received.')
                 try:
@@ -140,6 +139,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             # Check if the requested ID exists in clients and the client is idle
             if requestedId in clients and clients[requestedId]['state'] == 'idle':
                 # Ask the client if they want to establish a connection
+                clients[requestedId]['canRead'].store(0)
                 try:
                     clients[requestedId]['socket'].send(
                         f'S-{uniqueId}\0'.encode('utf-8'))
@@ -257,6 +257,18 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     break
 
         elif clientEntry['state'] == 'in-session':
+            if(message == b'quit'):
+                lock.acquire()
+                del clients[uniqueId]
+                numberOfClients -= 1
+                lock.release()
+                clientSocket.close()
+                connectedClientId = clientEntry['connectedId']
+                clients[connectedClientId]['state'] = 'idle'
+                connectedClientSocket = clients[connectedClientId]['socket']
+                connectedClientSocket.send(f'disconnected\0'.encode('utf-8'))
+                break
+
             print(
                 f'[T-{uniqueId}]: Message has been received from {clientEntry["connectedId"]}')
 
