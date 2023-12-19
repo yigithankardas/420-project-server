@@ -100,7 +100,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             break
 
         try:
-            message = clientSocket.recv(1024)
+            message = clientSocket.recv(130000) # 1-2
         except:
             continue
 
@@ -119,8 +119,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
         if clientEntry['state'] == 'idle':
             # server receives the requested ID from the client
             # Check if requestedId is a valid integer
+            
             try:
                 requestedId = int(message)
+                clients[requestedId]['canRead'].store(0)
             except ValueError:
                 print(f'[T-{uniqueId}]: Invalid ID received.')
                 try:
@@ -133,6 +135,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     lock.release()
                     clientSocket.close()
                     break
+            
 
             # Check if the requested ID exists in clients and the client is idle
             if requestedId in clients and clients[requestedId]['state'] == 'idle':
@@ -152,7 +155,6 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                         clientSocket.close()
                         break
 
-                clients[requestedId]['canRead'].store(0)
                 while True:
                     try:
                         response = clients[requestedId]['socket'].recv(
@@ -291,7 +293,7 @@ def socketHandler(serverSocket):
                 break
 
 
-socket.setdefaulttimeout(2)
+socket.setdefaulttimeout(0.5)
 serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 socketThread = Thread(target=socketHandler, args=(serverSocket,))
 socketThread.start()
