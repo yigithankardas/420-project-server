@@ -57,6 +57,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                    'id': generateUniqueId(),
                    'state': 'waiting-id',
                    'socket': clientSocket,
+                   'connectedId': -1,
                    'canRead': atomics.atomic(width=1, atype=atomics.UINT)
                    }
 
@@ -99,9 +100,12 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             break
 
         try:
-            message = clientSocket.recv(1024).decode()
+            message = clientSocket.recv(1024)
         except:
             continue
+
+        if clientEntry['state'] != 'in-session':
+            message = message.decode()
 
         if message == 'quit':
             lock.acquire()
@@ -168,6 +172,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                         clientSocket.send('1\0'.encode('utf-8'))
                         clients[requestedId]['socket'].send(
                             '1\0'.encode('utf-8'))
+
+                        clientEntry['connectedId'] = requestedId
+                        clients[requestedId]['connectedId'] = uniqueId
+
                         gA = clientSocket.recv(1024).decode()
                         gB = clients[requestedId]['socket'].recv(1024).decode()
 
@@ -245,6 +253,18 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     lock.release()
                     clientSocket.close()
                     break
+
+        elif clientEntry['state'] == 'in-session':
+            print(
+                f'[T-{uniqueId}]: Message has been received from {clientEntry["connectedId"]}')
+
+            connectedClientId = clientEntry['connectedId']
+            connectedClientSocket = clients[connectedClientId]['socket']
+
+            try:
+                connectedClientSocket.send(message)
+            except:
+                continue
 
 
 def socketHandler(serverSocket):
