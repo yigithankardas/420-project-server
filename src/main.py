@@ -100,7 +100,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             break
 
         try:
-            message = clientSocket.recv(130000) # 1-2
+            message = clientSocket.recv(200000)
         except:
             continue
 
@@ -119,7 +119,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
         if clientEntry['state'] == 'idle':
             # server receives the requested ID from the client
             # Check if requestedId is a valid integer
-            
+
             try:
                 requestedId = int(message)
             except ValueError:
@@ -134,7 +134,6 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     lock.release()
                     clientSocket.close()
                     break
-            
 
             # Check if the requested ID exists in clients and the client is idle
             if requestedId in clients and clients[requestedId]['state'] == 'idle':
@@ -257,7 +256,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     break
 
         elif clientEntry['state'] == 'in-session':
-            if(message == b'quit'):
+            if (message == b'quit'):
                 lock.acquire()
                 del clients[uniqueId]
                 numberOfClients -= 1
@@ -267,6 +266,12 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                 clients[connectedClientId]['state'] = 'idle'
                 connectedClientSocket = clients[connectedClientId]['socket']
                 connectedClientSocket.send(f'disconnected\0'.encode('utf-8'))
+                newUniqueID = generateUniqueId()
+                clients[newUniqueID] = clients.pop(connectedClientId)
+                clients[newUniqueID]['id'] = newUniqueID
+                clients[newUniqueID]['connectedId'] = -1
+                connectedClientSocket.send(
+                    f'newID-{newUniqueID}\0'.encode('utf-8'))
                 break
 
             print(
