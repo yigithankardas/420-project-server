@@ -116,7 +116,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     isMessageAnImage = True
                     clientSocket.send(message)
                     for _ in range(chunkCount):
-                        bytes = clientSocket.recv(2100)
+                        bytes = clientSocket.recv(2000)
                         newMessage += bytes
                         chunks.append(bytes)
                         clientSocket.send(message)
@@ -312,10 +312,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                         chunkCountBytes += b'\x00'
 
                     connectedClientSocket.send(chunkCountBytes)
-                    connectedClientSocket.recv(200)
+                    connectedClientSocket.recv(len(chunkCountBytes))
                     for chunk in chunks:
                         connectedClientSocket.send(chunk)
-                        connectedClientSocket.recv(200)
+                        connectedClientSocket.recv(len(chunkCountBytes))
                     clients[connectedClientId]['canRead'].store(1)
                 else:
                     connectedClientSocket.send(message)
