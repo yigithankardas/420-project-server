@@ -14,6 +14,9 @@ from cryptography.hazmat.primitives.asymmetric import dh
 HOST = '127.0.0.1'
 PORT = 5555
 
+SOCKET_TIMEOUT = 0.5
+SERVER_THREAD_WAIT = 0.01
+
 clients = {}
 lock = Lock()
 numberOfClients = 0
@@ -84,8 +87,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
     clientEntry['state'] = 'idle'
 
     while True:
-        sleep(0.01)
+        sleep(SERVER_THREAD_WAIT)
 
+        isMessageAnImage = False
+        chunks = []
         uniqueId = clientEntry['id']
         if clientEntry['canRead'].load() == 0:
             continue
@@ -100,7 +105,17 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             break
 
         try:
-            message = clientSocket.recv(200000)
+            message = clientSocket.recv(4096)
+            if message == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00':
+                message = b''
+                isMessageAnImage = True
+                clientSocket.send(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+                for _ in range(11):
+                    bytes = clientSocket.recv(20000)
+                    message += bytes
+                    chunks.append(bytes)
+                    clientSocket.send(
+                        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
         except:
             continue
 
@@ -256,6 +271,10 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                     break
 
         elif clientEntry['state'] == 'in-session':
+            if isMessageAnImage:
+                clients[clientEntry['connectedId']]['canRead'].store(0)
+                sleep(0.4)
+
             if (message == b'quit'):
                 lock.acquire()
                 del clients[uniqueId]
@@ -272,6 +291,7 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
                 clients[newUniqueID]['connectedId'] = -1
                 connectedClientSocket.send(
                     f'newID-{newUniqueID}\0'.encode('utf-8'))
+                clients[newUniqueID]['canRead'].store(1)
                 break
 
             print(
@@ -281,8 +301,19 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
             connectedClientSocket = clients[connectedClientId]['socket']
 
             try:
-                connectedClientSocket.send(message)
+                if isMessageAnImage:
+                    connectedClientSocket.send(
+                        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+                    connectedClientSocket.recv(200)
+                    for chunk in chunks:
+                        connectedClientSocket.send(chunk)
+                        connectedClientSocket.recv(200)
+                    clients[connectedClientId]['canRead'].store(1)
+                else:
+                    connectedClientSocket.send(message)
             except:
+                if isMessageAnImage:
+                    clients[connectedClientId]['canRead'].store(1)
                 continue
 
 
@@ -310,7 +341,7 @@ def socketHandler(serverSocket):
                 break
 
 
-socket.setdefaulttimeout(0.5)
+socket.setdefaulttimeout(SOCKET_TIMEOUT)
 serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 socketThread = Thread(target=socketHandler, args=(serverSocket,))
 socketThread.start()
