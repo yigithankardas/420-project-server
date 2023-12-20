@@ -106,16 +106,21 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
         try:
             message = clientSocket.recv(4096)
-            if message == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00':
-                message = b''
-                isMessageAnImage = True
-                clientSocket.send(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-                for _ in range(11):
-                    bytes = clientSocket.recv(20000)
-                    message += bytes
-                    chunks.append(bytes)
-                    clientSocket.send(
-                        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+            if b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' in message:
+                control = b''
+                for _ in range(len(message)):
+                    control += b'\x00'
+                if control == message:
+                    newMessage = b''
+                    chunkCount = len(message)
+                    isMessageAnImage = True
+                    clientSocket.send(message)
+                    for _ in range(chunkCount):
+                        bytes = clientSocket.recv(2100)
+                        newMessage += bytes
+                        chunks.append(bytes)
+                        clientSocket.send(message)
+                    message = newMessage
         except:
             continue
 
@@ -302,8 +307,11 @@ def handleClient(clientSocket: socket.socket, clientAddress: tuple) -> None:
 
             try:
                 if isMessageAnImage:
-                    connectedClientSocket.send(
-                        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+                    chunkCountBytes = b''
+                    for _ in range(len(chunks)):
+                        chunkCountBytes += b'\x00'
+
+                    connectedClientSocket.send(chunkCountBytes)
                     connectedClientSocket.recv(200)
                     for chunk in chunks:
                         connectedClientSocket.send(chunk)
